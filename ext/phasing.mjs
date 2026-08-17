@@ -229,14 +229,19 @@ export class PhasingEngine {
         for (const p of this._phases) {
             p._lastStatus = undefined;
             p._lastP = undefined;
-            if (p._drop) this.drop(p, null);
+            if (p._drop) this.drop(p, null); // restore fragment transforms
         }
         for (const byModel of this._buckets.values()) {
             for (const [model, dbids] of byModel) {
-                this.viewer.clearThemingColors(model);
-                this.viewer.show(dbids, model);
+                try {
+                    this.viewer.clearThemingColors(model);
+                    this.viewer.show(dbids, model);
+                } catch (err) {
+                    console.warn('[phasing] clearOverrides', err.message);
+                }
             }
         }
         this._statusKey = null;
+        this.viewer.impl.invalidate(true);
     }
 }

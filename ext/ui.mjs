@@ -101,14 +101,15 @@ export class PhasingExtension extends Autodesk.Viewing.Extension {
 
     toggleBar(button) {
         const bar = document.getElementById('phasing-bar');
-        const show = bar.classList.toggle('hidden');
+        // toggle() returns true when the class was ADDED, i.e. the bar is now hidden
+        const show = !bar.classList.toggle('hidden');
         button.setState(show ? Autodesk.Viewing.UI.Button.State.ACTIVE : Autodesk.Viewing.UI.Button.State.INACTIVE);
         this._enabled = show;
         if (show) {
             this.engine.reset();
             this.update();
         } else {
-            this.engine.clearOverrides();
+            this.engine.clearOverrides(); // restore visibility, colors, and drop transforms
         }
     }
 
@@ -121,7 +122,7 @@ export class PhasingExtension extends Autodesk.Viewing.Extension {
     }
 
     update() {
-        const t = this._t;
+        const t = this._t / 10; // slider spans 0..1000; the phase timeline is 0..100
         const cur = this.engine.phases.find((p) => p.start <= t && t < p.end);
         const id = t >= 100 ? 'done' : cur ? cur.id : null;
         // tooltip chip follows the thumb
