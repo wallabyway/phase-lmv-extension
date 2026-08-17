@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Snowdon Tower — Construction Phasing</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css">
+    <style>
+        html, body { margin: 0; height: 100%; overflow: hidden; font-family: "Artifakt Element", Helvetica, Arial, sans-serif; }
+        #viewer { position: absolute; inset: 0; }
+
+        /* ---- phasing bar (chips above the slider, above LMV's bottom nav toolbar) ---- */
+        #phasing-bar {
+            position: absolute;
+            left: 50%;
+            bottom: 90px;                       /* navTools is ~50px tall at the bottom edge */
+            transform: translateX(-50%);
+            width: min(880px, calc(100vw - 32px));
+            /* LMV's inner viewer container is z-index:1 — keep the bar above it */
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            background: rgba(24, 30, 40, 0.94);
+            color: #e8edf4;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 10px;
+            padding: 6px 14px 8px;
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+            user-select: none;
+            white-space: nowrap;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+        #phasing-bar.hidden { opacity: 0; transform: translateX(-50%) translateY(14px); pointer-events: none; }
+
+        /* chips float above the slider track, tooltip-style, at each phase start */
+        .phasing-chips { position: relative; height: 20px; margin: 0 8px; }
+        .phasing-chip {
+            position: absolute;
+            top: 0;
+            transform: translateX(-50%);
+            display: inline-flex; align-items: center; gap: 5px;
+            font-size: 11px; color: #c9d6e4;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px; padding: 1px 8px; cursor: pointer;
+        }
+        .phasing-chip:hover { background: rgba(255, 255, 255, 0.12); }
+        .phasing-chip .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+        .phasing-chip.active { outline: 1px solid #4aa8ff; background: rgba(74, 168, 255, 0.16); }
+
+        .phasing-row { display: flex; align-items: center; gap: 10px; }
+        .phasing-title {
+            font-weight: 600; font-size: 12px; letter-spacing: 0.4px;
+            text-transform: uppercase; color: #9fb4cc;
+        }
+        .phasing-slider-wrap { flex: 1 1 auto; min-width: 60px; }
+        #phasing-slider { width: 100%; margin: 0; accent-color: #4aa8ff; cursor: pointer; }
+        .phasing-current {
+            font-size: 12px; font-weight: 600;
+            padding: 3px 10px; border-radius: 20px;
+            background: #2c3a4d; min-width: 90px; text-align: center;
+        }
+        .phasing-current.dim { color: #8fa2b8; background: #232c3a; }
+        .phasing-reset {
+            font-size: 11px; color: #7fd1ff; cursor: pointer;
+            padding: 3px 6px; border: 1px solid rgba(127, 209, 255, 0.35); border-radius: 6px;
+        }
+        .phasing-reset:hover { background: rgba(127, 209, 255, 0.12); }
+
+        @media (max-width: 820px) {
+            .phasing-title { display: none; }
+            .phasing-chip { padding: 1px 6px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="viewer"></div>
+    <div id="phasing-bar" class="hidden">
+        <div class="phasing-chips" id="phasing-legend"></div>
+        <div class="phasing-row">
+            <span class="phasing-title">Construction Phasing</span>
+            <div class="phasing-slider-wrap">
+                <input type="range" id="phasing-slider" min="0" max="100" step="1" value="0">
+            </div>
+            <span class="phasing-current" id="phasing-current">—</span>
+            <span class="phasing-reset" id="phasing-reset">reset</span>
+        </div>
+    </div>
+    <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
+    <script type="module">
+        /* ============================================================================
+         * LMV bootstrap — access token, model URN, and viewer startup.
+         * UI / extension wiring lives in ext/ui.mjs; phasing logic in ext/phasing.mjs.
+         * ========================================================================== */
+
+        import { PhasingExtension, DEFAULT_PHASES } from './ext/ui.mjs';
+
+        // The token endpoint (https://aps-extensions.autodesk.io/api/auth/token) is
+        // DNS-locked for browsers — fetch it with curl and paste it here (~1h expiry):
+        //   curl https://aps-extensions.autodesk.io/api/auth/token
+        const ACCESS_TOKEN = 'eyJhbGciOiJSUzI1NiIsImtpZCI6IlZiakZvUzhQU3lYODQyMV95dndvRUdRdFJEa19SUzI1NiIsInBpLmF0bSI6ImFzc2MifQ.eyJzY29wZSI6WyJkYXRhOnJlYWQiXSwiY2xpZW50X2lkIjoiU0diREhFbFg2Nmc5U2MzU2VUbERQZ1NoQzJ6M1BqVUciLCJpc3MiOiJodHRwczovL2RldmVsb3Blci5hcGkuYXV0b2Rlc2suY29tIiwiYXVkIjoiaHR0cHM6Ly9hdXRvZGVzay5jb20iLCJqdGkiOiJYb0ZwTlpJdFlhVFdRdGpHOHhVWDVXOTRJZXRwblhzV0dGWmlWS3NvZlZWcFdiZEhHQW9pOE9wU3lDMFhLaTl0IiwiZXhwIjoxNzg3MDEyMTA1fQ.niOacnxlBTqjp4gHqkuIkmiyhT201eaCpHRroyiEhyCvcbsJkR6Bg6k2mrpv9pDEIcb7IXr4Qy_bBE1PEKtoLTQ3lO4W_Ceu75jYQ-p6ZvGcgqs5ZRLWjiPUVYD80OZzv2UzPFOgrPuqk-a2moabxdKZeplJVqmqvw7VyM1cHSxlC3XjN1lvUnEru5BCoYnGo0dN9NTzNNGpQDScLvp728QgkkeODctcq5jid7x1F-WQJFRzWvEoI9MA7CU3nRw6qyuEHyBPl5RlkLJWDT_37Xdp6WCRf0yG85nkWgcScQ7u7RHh6ZNFUZchtvnqEpRZrEHt_H9DR4zQKFRntTwVCQ';
+        const TOKEN_EXPIRES_IN = 3600;
+
+        // Snowdon Towers Sample Architectural.rvt — one coordinated 3D view per category
+        const MODEL_URN = 'urn:dXJuOmFkc2sub2JqZWN0czpvcy5vYmplY3Q6c2FtcGxlbW9kZWxzL1Nub3dkb24lMjBUb3dlcnMlMjBTYW1wbGUlMjBBcmNoaXRlY3R1cmFsLnJ2dA==';
+        const VIEWABLES = {
+            'Coord - Arch Floors': 'Floors',
+            'Coord - Arch Stairs': 'Stairs',
+            'Coord - Arch Walls': 'Walls',
+            'Coord - Arch Lighting': 'Lighting Fixtures',
+            'Coord - Arch Roofs': 'Roofs'
+        };
+
+        function loadViewables(viewer, ext) {
+            Autodesk.Viewing.Document.load(MODEL_URN, (doc) => {
+                const nameOf = (v) => (typeof v.name === 'function' ? v.name() : v.name);
+                const wanted = doc.getRoot().search({ role: '3d' })
+                    .filter((v) => v.data && v.data.type === 'geometry' && VIEWABLES[nameOf(v)]);
+                let pending = wanted.length;
+                for (const viewable of wanted) {
+                    viewer.loadDocumentNode(doc, viewable).then((model) => {
+                        ext.addModel(model, VIEWABLES[nameOf(viewable)]);
+                        if (--pending === 0) viewer.fitToView();
+                    }).catch((err) => {
+                        console.error('[phasing] failed to load', viewable.name, err);
+                        if (--pending === 0) viewer.fitToView();
+                    });
+                }
+            }, (code, message, errors) => console.error('[phasing] document load failed', code, message, errors));
+        }
+
+        function initViewer(phases) {
+            Autodesk.Viewing.Initializer({
+                env: 'AutodeskProduction',
+                getAccessToken: (callback) => callback(ACCESS_TOKEN, TOKEN_EXPIRES_IN)
+            }, () => {
+                const viewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById('viewer'), {
+                    extensions: ['PhasingExtension']
+                });
+                viewer.start();
+                viewer.setTheme('light-theme');
+                window.viewer = viewer;
+                viewer.loadExtension('PhasingExtension').then((ext) => {
+                    ext.setPhases(phases);
+                    loadViewables(viewer, ext);
+                });
+            });
+        }
+
+        initViewer(DEFAULT_PHASES);
+    </script>
+</body>
+</html>

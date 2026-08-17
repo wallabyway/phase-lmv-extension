@@ -1,0 +1,9 @@
+# local test harness + artifacts (smoke-test.js, plan.md, screenshots)
+tests/
+
+# OS junk
+.DS_Store
+
+# node
+node_modules/
+npm-debug.log*

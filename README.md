@@ -1,0 +1,81 @@
+# Snowdon Tower — LMV Construction Phasing
+
+A minimal Autodesk LMV viewer that loads the **Snowdon Towers Sample Architectural.rvt**
+model and lets you scrub a construction timeline: elements are hidden until their
+phase starts, highlighted while in progress, and dimmed once finished.
+
+![phasing](tests/smoke-t62.png)
+
+## Run
+
+Serve the folder (the viewer SDK needs http):
+
+```bash
+cd phase-lmv-ext
+python3 -m http.server 8000
+# open http://localhost:8000
+```
+
+Click the **phasing toolbar button** (timeline icon) to reveal the slider, then drag.
+The bar sits on a single line above the viewer's bottom navigation toolbar.
+
+## Files
+
+| File | Purpose |
+|---|---|
+| `index.html` | Viewer container + phasing bar UI + inline LMV bootstrap (access token, model URN, viewer startup) |
+| `ext/ui.mjs` | `PhasingExtension`: toolbar button, slider bar, tooltip chip, embedded phase data (ES module) |
+| `ext/phasing.mjs` | `PhasingEngine`: level detection, phase construction, hide/theming, fall-in animation via `fragList.updateAnimTransform` (ES module) |
+| `tests/smoke-test.js` | Headless (Puppeteer) end-to-end test — load, toggle bar, scrub slider, probe visibility + theming (screenshots land in `tests/`) |
+| `tests/plan.md` | Build plan / source materials |
+
+## How it works
+
+The Snowdon model was translated into **five coordinated 3D views, one per Revit
+category** (no combined view exists — the structural/façade/MEP links were not
+translated). The app loads all five into a single viewer and tags each model
+instance with its category.
+
+Phases are **category-major, level-minor**: Floors drop in level by level
+(L0 → L5), then Walls, then Stairs, then Roof, then MEP. Each element's level
+comes from its Revit constraints (`Base Constraint` / `Base Level` / `Level`);
+elements without level info are placed by height, assuming the levels are
+evenly spaced over the model. Roof-level elements (R1/R2/Parapet/…) join the
+Roof phase.
+
+For a slider position `t`:
+
+- `t < phase.start` → hidden
+- `phase.start <= t < phase.end` → visible, phase color, **hanging above and
+  falling into place** as t grows (fragment transform via
+  `fragList.updateAnimTransform`, no tweening)
+- `t >= phase.end` → visible, dimmed phase color
+
+A tooltip chip above the slider thumb follows the dragger and shows the active
+phase. The schedule (`DEFAULT_PHASES` in `ext/ui.mjs`) is embedded in the app,
+so no external config fetch is needed.
+
+## Access token
+
+The token endpoint (`https://aps-extensions.autodesk.io/api/auth/token`) is
+**DNS-locked for browsers** — it will not respond from the page. The token is
+fetched with curl and hardcoded in `index.html`:
+
+```bash
+curl https://aps-extensions.autodesk.io/api/auth/token
+# paste the new access_token into const ACCESS_TOKEN in index.html
+```
+
+It expires after ~1 hour; re-run the curl and update the constant when the model
+stops loading (401s in the console).
+
+## Smoke test
+
+```bash
+cd phase-lmv-ext
+NODE_PATH=$(npm root -g) node tests/smoke-test.js   # needs puppeteer + Chromium
+```
+
+Loads the app headless, waits for all five category groups, toggles the bar,
+scrubs the slider through every phase, probes `isNodeVisible` + stored theming
+colors per category, and screenshots each timeline position.
