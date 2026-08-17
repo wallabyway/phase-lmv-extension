@@ -1,6 +1,7 @@
 /* ============================================================================
  * Phasing engine — level detection, phase construction, visibility/theming,
- * and the fall-in animation (fragment transform manipulation).
+ * and the fall-in animation (fragment transform manipulation; the 0..1000
+ * slider drives the drop height directly — no tweening).
  * Pure logic + viewer API; no DOM. Driven by the UI extension (ui.mjs).
  * ========================================================================== */
 
@@ -132,8 +133,18 @@ export class PhasingEngine {
             }
         }
         for (const p of this._cfg.byCategory) all.push(p);
-        const span = 100 / all.length;
-        this._phases = all.map((p, i) => ({ ...p, start: i * span, end: (i + 1) * span }));
+        // Conveyor-belt timeline: a new part appears every `step` units, but each
+        // part stays in flight for `overlap` steps, so several parts hang and fall
+        // simultaneously (exactly `overlap` of them at any interior time). The
+        // last part lands exactly at t=100.
+        const overlap = this._cfg.overlap ?? 2;
+        const step = 100 / (all.length - 1 + overlap);
+        this._phases = all.map((p, i) => ({
+            ...p,
+            start: i * step,
+            end: i * step + overlap * step,
+            _lift: 0 // current visual lift (last applied drop height)
+        }));
         this._phaseById = new Map(this._phases.map((p) => [p.id, p]));
 
         this._buckets = new Map();
@@ -158,23 +169,23 @@ export class PhasingEngine {
 
     statusOf(p, t) { return t < p.start ? 0 : t >= p.end ? 2 : 1; }
     progress(p, t) { return Math.min(1, Math.max(0, (t - p.start) / (p.end - p.start))); }
+    // Target lift (hanging height) of a phase at time t; 0 = settled on the floor.
+    liftTarget(p, t) { return this.statusOf(p, t) === 1 ? (1 - this.progress(p, t)) * this._cfg.dropHeight : 0; }
 
-    // Called on every slider input: render when the phase status set changes,
-    // and keep the in-progress phase's drop height in sync with t.
+    // Called on every slider input: re-render when the phase status set changes,
+    // then move every in-flight phase's lift exactly where t puts it. The 0..1000
+    // slider stepping makes the fall smooth — no tweening.
     update(t) {
         const key = this._phases.map((p) => this.statusOf(p, t)).join('');
         if (key !== this._statusKey) {
             this._statusKey = key;
             this.render(t);
         }
-        const cur = this._phases.find((p) => p.start <= t && t < p.end);
-        if (cur) {
-            const p = this.progress(cur, t);
-            if (p !== cur._lastP) {
-                cur._lastP = p;
-                this.drop(cur, p);
-                this.viewer.impl.invalidate(true);
-            }
+        for (const p of this._phases) {
+            const target = this.liftTarget(p, t);
+            if (Math.abs(p._lift - target) < 0.5) continue;
+            p._lift = target;
+            this._applyLift(p, target);
         }
     }
 
@@ -199,37 +210,50 @@ export class PhasingEngine {
                     console.warn('[phasing]', pid, err.message);
                 }
             }
-            if (s === 1) this.drop(p, this.progress(p, t));
-            else if (p._drop) this.drop(p, null);
         }
         this.viewer.impl.invalidate(true);
     }
 
-    // lift (or reset) a phase's fragments; prog 0..1 -> lift = (1-prog) * dropHeight
-    drop(p, prog) {
-        const reset = prog == null;
+    /* ---- fall-in animation ----
+     * The slider drives the drop height directly (0..1000 steps = ~1% of
+     * dropHeight per step, so the fall is smooth without tweening). */
+
+    // Set a phase's fragments to the given lift (z offset above their resting place).
+    _applyLift(p, z) {
+        this._pos.set(0, 0, z);
         const byModel = this._buckets.get(p.id) || new Map();
-        this._pos.set(0, 0, reset ? 0 : (1 - prog) * this._cfg.dropHeight);
         for (const [model, dbids] of byModel) {
+            // NOTE: no isLoadDone() guard here — SVF2 models can report false
+            // even when fully rendered, and the transform is harmless to apply.
             const fl = model.getFragmentList();
             const tree = this._trees.get(model);
             if (!fl || !fl.updateAnimTransform || !tree) continue;
             for (const d of dbids) {
                 // NOTE: the SVF2 fragment list has no dbId2fragId map — enumerate
                 // the node's fragments through the instance tree instead.
-                tree.enumNodeFragments(d, (f) => {
-                    reset ? fl.updateAnimTransform(f) : fl.updateAnimTransform(f, null, null, this._pos);
-                });
+                tree.enumNodeFragments(d, (f) => fl.updateAnimTransform(f, null, null, this._pos));
             }
         }
-        p._drop = !reset;
+        this.viewer.impl.invalidate(true);
+    }
+
+    // Remove the anim transform entirely (original position).
+    _resetLift(p) {
+        const byModel = this._buckets.get(p.id) || new Map();
+        for (const [model, dbids] of byModel) {
+            const fl = model.getFragmentList();
+            const tree = this._trees.get(model);
+            if (!fl || !fl.updateAnimTransform || !tree) continue;
+            for (const d of dbids) tree.enumNodeFragments(d, (f) => fl.updateAnimTransform(f));
+        }
+        this.viewer.impl.invalidate(true);
     }
 
     clearOverrides() {
         for (const p of this._phases) {
             p._lastStatus = undefined;
-            p._lastP = undefined;
-            if (p._drop) this.drop(p, null); // restore fragment transforms
+            p._lift = 0;
+            this._resetLift(p); // restore fragment transforms
         }
         for (const byModel of this._buckets.values()) {
             for (const [model, dbids] of byModel) {

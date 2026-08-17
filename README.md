@@ -43,17 +43,23 @@ elements without level info are placed by height, assuming the levels are
 evenly spaced over the model. Roof-level elements (R1/R2/Parapet/…) join the
 Roof phase.
 
+The timeline is a **conveyor belt**: a new part appears every `step` units
+and stays in flight for `overlap` steps (default 2), so two parts hang and
+fall at the same time while earlier parts rest dimmed on the floor. The last
+part lands exactly at `t = 100`.
+
 For a slider position `t`:
 
 - `t < phase.start` → hidden
 - `phase.start <= t < phase.end` → visible, phase color, **hanging above and
   falling into place** as t grows (fragment transform via
-  `fragList.updateAnimTransform`, no tweening)
+  `fragList.updateAnimTransform`; the 0..1000 slider drives the drop height
+  directly — no tweening)
 - `t >= phase.end` → visible, dimmed phase color
 
-A tooltip chip above the slider thumb follows the dragger and shows the active
-phase. The schedule (`DEFAULT_PHASES` in `ext/ui.mjs`) is embedded in the app,
-so no external config fetch is needed.
+A tooltip chip above the slider thumb follows the dragger and shows the
+newest part to appear on the belt. The schedule (`DEFAULT_PHASES` in
+`ext/ui.mjs`) is embedded in the app, so no external config fetch is needed.
 
 ## Access token
 

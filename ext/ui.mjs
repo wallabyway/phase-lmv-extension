@@ -11,6 +11,7 @@ import { PhasingEngine } from './phasing.mjs';
 // Floors L0..L5, then Walls L0..L5, then Stairs L0..L5, then 'byCategory'.
 export const DEFAULT_PHASES = {
     dropHeight: 150, // how far elements hang above their resting place at phase start
+    overlap: 2,      // conveyor-belt: parts in flight at once (2 or 3)
     levelCategories: ['Floors', 'Walls', 'Stairs'], // drop order (category-major)
     levelProps: ['Base Constraint', 'Base Level', 'Level'],
     roofLevels: ['R1', 'R2', 'M1', 'Parapet', 'Block', 'Green Roof'],
@@ -123,7 +124,14 @@ export class PhasingExtension extends Autodesk.Viewing.Extension {
 
     update() {
         const t = this._t / 10; // slider spans 0..1000; the phase timeline is 0..100
-        const cur = this.engine.phases.find((p) => p.start <= t && t < p.end);
+        // With the conveyor-belt schedule several phases are in flight at once —
+        // the label/tooltip track the NEWEST part to appear (last phase with
+        // start <= t still airborne).
+        let cur = null;
+        for (const p of this.engine.phases) {
+            if (p.start > t) break;
+            if (t < p.end) cur = p;
+        }
         const id = t >= 100 ? 'done' : cur ? cur.id : null;
         // tooltip chip follows the thumb
         if (this._tooltip) {
