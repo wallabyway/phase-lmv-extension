@@ -1,8 +1,8 @@
 # Snowdon Tower — LMV Construction Phasing
 
-A minimal Autodesk LMV viewer that loads the **Snowdon Towers Sample Architectural.rvt**
-model and lets you scrub a construction timeline: elements are hidden until their
-phase starts, highlighted while in progress, and dimmed once finished.
+A minimal Autodesk LMV viewer that loads **Snowdon-Tower-(Complete).rvt** and lets
+you scrub a construction timeline: elements are hidden until their phase starts,
+highlighted while in progress, and dimmed once finished.
 
 ![phasing](tests/smoke-t62.png)
 
@@ -77,3 +77,34 @@ NODE_PATH=$(npm root -g) node tests/smoke-test.js   # needs puppeteer + Chromium
 Loads the app headless, waits for phase analysis on the combined model, toggles
 the bar, scrubs the slider through every phase, probes `isNodeVisible` + stored
 theming colors per category, and screenshots each timeline position.
+
+## Known issue — everything visible at t=0
+
+**Symptom:** with the bar open at t=0 (label "Structure L0"), furniture and
+windows are still visible — elements that should stay hidden until their phase
+on the belt.
+
+**User screenshots (local):**
+
+```
+/Users/bealem/Documents/SCR-20260818-nims.jpeg
+/Users/bealem/Documents/SCR-20260818-njux.jpeg
+```
+
+Tracked copies (so the issue is visible from the repo):
+
+![t=0 furniture bug 1](docs/bug-t0-furniture-1.jpeg)
+![t=0 furniture bug 2](docs/bug-t0-furniture-2.jpeg)
+
+**Status:**
+
+- **Fixed:** `render()` skipped hide/show while `model.isLoadDone()` returned
+  `false` — SVF2 models can report `false` even when fully rendered. The guard
+  was removed; the smoke test now asserts only the first phase is visible
+  immediately after the bar opens.
+- **Still tracking:** headless pixel analysis shows the building at ~67% pixel
+  coverage even at t=0, while fragment-level `isFragVisible` (the renderer's own
+  check) says the same fragments are *not* drawable. Suspicion: browser-side
+  caching of the unversioned `ext/phasing.mjs` (cache-busted via `?v=` imports)
+  and/or a render-path issue that appears only in real browsers. A
+  renderer-truth scan (all fragments × all phases) is the next step.
