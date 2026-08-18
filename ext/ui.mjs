@@ -14,6 +14,15 @@ export const DEFAULT_PHASES = {
     overlap: 2,      // conveyor-belt: parts in flight at once (2 or 3)
     levelCategories: ['Floors', 'Walls', 'Stairs'], // drop order (category-major)
     levelProps: ['Base Constraint', 'Base Level', 'Level'],
+    // Revit exports sub-categories (and LMV prefixes values with 'Revit ') —
+    // normalize components onto their parent category for phasing
+    categoryMap: {
+        'Runs': 'Stairs', 'Supports': 'Stairs', 'Landings': 'Stairs',
+        'Handrails': 'Stairs', 'Top Rails': 'Stairs', 'Railings': 'Stairs',
+        'Vertical Circulation': 'Stairs',
+        'Wall Sweeps': 'Walls', 'Curtain Panels': 'Walls', 'Curtain Wall Mullions': 'Walls',
+        'Slab Edges': 'Floors'
+    },
     roofLevels: ['R1', 'R2', 'M1', 'Parapet', 'Block', 'Green Roof'],
     colors: [
         [91, 155, 213], // Floors

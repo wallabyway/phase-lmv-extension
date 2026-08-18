@@ -31,17 +31,18 @@ The bar sits on a single line above the viewer's bottom navigation toolbar.
 
 ## How it works
 
-The Snowdon model was translated into **five coordinated 3D views, one per Revit
-category** (no combined view exists — the structural/façade/MEP links were not
-translated). The app loads all five into a single viewer and tags each model
-instance with its category.
+The app loads **Snowdon-Tower-(Complete).rvt** — a single combined `{3D}` view
+containing every Revit category. Each element is bucketed by its per-element
+**Category** property; categories that aren't Floors/Walls/Stairs/Roofs/
+Lighting Fixtures (doors, furniture, MEP, …) join an **Other** phase at the end
+of the timeline.
 
 Phases are **category-major, level-minor**: Floors drop in level by level
-(L0 → L5), then Walls, then Stairs, then Roof, then MEP. Each element's level
-comes from its Revit constraints (`Base Constraint` / `Base Level` / `Level`);
-elements without level info are placed by height, assuming the levels are
-evenly spaced over the model. Roof-level elements (R1/R2/Parapet/…) join the
-Roof phase.
+(L0 → L5), then Walls, then Stairs, then Roof, then MEP, then Other. Each
+element's level comes from its Revit constraints (`Base Constraint` /
+`Base Level` / `Level`); elements without level info are placed by height,
+assuming the levels are evenly spaced over the model. Roof-level elements
+(R1/R2/Parapet/…) join the Roof phase.
 
 The timeline is a **conveyor belt**: a new part appears every `step` units
 and stays in flight for `overlap` steps (default 2), so two parts hang and
@@ -82,6 +83,6 @@ cd phase-lmv-ext
 NODE_PATH=$(npm root -g) node tests/smoke-test.js   # needs puppeteer + Chromium
 ```
 
-Loads the app headless, waits for all five category groups, toggles the bar,
-scrubs the slider through every phase, probes `isNodeVisible` + stored theming
-colors per category, and screenshots each timeline position.
+Loads the app headless, waits for phase analysis on the combined model, toggles
+the bar, scrubs the slider through every phase, probes `isNodeVisible` + stored
+theming colors per category, and screenshots each timeline position.

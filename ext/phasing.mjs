@@ -54,25 +54,24 @@ export class PhasingEngine {
             if (tree.getChildCount(d) === 0) dbids.push(d);
         }, true);
 
-        // level from Revit constraints (only categories that are phased by level)
-        const level = new Map();
-        if (!this._catPhase.has(category)) {
-            const props = await new Promise((res) => {
-                const map = new Map();
-                model.getBulkProperties(dbids, { propFilter: this._cfg.levelProps }, (r) => {
-                    for (const p of r) {
-                        const m = new Map();
-                        for (const pr of p.properties) {
-                            const prev = m.get(pr.displayName);
-                            m.set(pr.displayName, prev === undefined ? pr.displayValue : [].concat(prev, pr.displayValue));
-                        }
-                        map.set(p.dbId, m);
+        // per-element Revit category + level from constraints. With a combined
+        // model (single {3D} view) the category can no longer be tagged per
+        // model, so it comes from the element's 'Category' property; the model
+        // tag is only a fallback when the property is missing.
+        const props = await new Promise((res) => {
+            const map = new Map();
+            model.getBulkProperties(dbids, { propFilter: ['Category', ...this._cfg.levelProps] }, (r) => {
+                for (const p of r) {
+                    const m = new Map();
+                    for (const pr of p.properties) {
+                        const prev = m.get(pr.displayName);
+                        m.set(pr.displayName, prev === undefined ? pr.displayValue : [].concat(prev, pr.displayValue));
                     }
-                    res(map);
-                }, () => res(map));
-            });
-            for (const d of dbids) level.set(d, this.resolve(props.get(d)));
-        }
+                    map.set(p.dbId, m);
+                }
+                res(map);
+            }, () => res(map));
+        });
 
         // world Z per element (for the height-based level guess below)
         const box = new Array(6);
@@ -80,13 +79,19 @@ export class PhasingEngine {
         this._modelZ.set(model, isFinite(box[0]) ? { min: box[2], max: box[5] } : null);
         for (const d of dbids) {
             tree.getNodeBox(d, box);
+            const pr = props.get(d);
+            let cat = pr ? [].concat(pr.get('Category')).find((v) => typeof v === 'string') : null;
+            if (cat) {
+                cat = cat.replace(/^Revit\s+/i, ''); // LMV prefixes category values with 'Revit '
+                cat = (this._cfg.categoryMap && this._cfg.categoryMap[cat]) || cat;
+            }
             this._entries.push({
-                model, category, dbid: d,
-                level: level.get(d) ?? null,
+                model, category: cat || category, dbid: d,
+                level: pr ? this.resolve(pr) : null,
                 z: isFinite(box[0]) ? (box[2] + box[5]) / 2 : null
             });
         }
-        console.log(`[phasing] ${category}: ${dbids.length} elements`);
+        console.log(`[phasing] ${category || 'model'}: ${dbids.length} elements`);
     }
 
     // Parking -> 0, "L1 - Block 35" -> 1, roof-level names -> 'roof', else null
@@ -133,6 +138,32 @@ export class PhasingEngine {
             }
         }
         for (const p of this._cfg.byCategory) all.push(p);
+
+        // bucket by per-element category: level categories drop level by level,
+        // roof/finishes via their static phase, everything else goes to 'other'
+        // (appended at the end of the belt only if it has any elements)
+        this._buckets = new Map();
+        const push = (pid, model, dbid) => {
+            if (!this._buckets.has(pid)) this._buckets.set(pid, new Map());
+            const m = this._buckets.get(pid);
+            if (!m.has(model)) m.set(model, []);
+            m.get(model).push(dbid);
+        };
+        let sawOther = false;
+        for (const e of this._entries) {
+            const cat = e.category;
+            const lv = e.level === 'roof' ? null : (e.level ?? band(e));
+            let pid;
+            if (this._catPhase.has(cat)) pid = this._catPhase.get(cat);
+            else if (lv === null) pid = 'roof';
+            else if (cats.includes(cat)) pid = cat.toLowerCase() + '-' + lv;
+            else { pid = 'other'; sawOther = true; }
+            push(pid, e.model, e.dbid);
+        }
+        if (sawOther) {
+            all.push({ id: 'other', name: 'Other', short: 'Other', color: [110, 110, 110] });
+        }
+
         // Conveyor-belt timeline: a new part appears every `step` units, but each
         // part stays in flight for `overlap` steps, so several parts hang and fall
         // simultaneously (exactly `overlap` of them at any interior time). The
@@ -146,19 +177,6 @@ export class PhasingEngine {
             _lift: 0 // current visual lift (last applied drop height)
         }));
         this._phaseById = new Map(this._phases.map((p) => [p.id, p]));
-
-        this._buckets = new Map();
-        const push = (pid, model, dbid) => {
-            if (!this._buckets.has(pid)) this._buckets.set(pid, new Map());
-            const m = this._buckets.get(pid);
-            if (!m.has(model)) m.set(model, []);
-            m.get(model).push(dbid);
-        };
-        for (const e of this._entries) {
-            const lv = e.level === 'roof' ? null : (e.level ?? band(e));
-            const pid = this._catPhase.get(e.category) || (lv === null ? 'roof' : e.category.toLowerCase() + '-' + lv);
-            push(pid, e.model, e.dbid);
-        }
         console.log('[phasing]', this._phases.map((p) => p.short).join(' '));
 
         this._statusKey = null;

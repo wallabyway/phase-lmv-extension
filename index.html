@@ -103,25 +103,18 @@
         const ACCESS_TOKEN = 'eyJhbGciOiJSUzI1NiIsImtpZCI6IlZiakZvUzhQU3lYODQyMV95dndvRUdRdFJEa19SUzI1NiIsInBpLmF0bSI6ImFzc2MifQ.eyJzY29wZSI6WyJkYXRhOnJlYWQiXSwiY2xpZW50X2lkIjoiU0diREhFbFg2Nmc5U2MzU2VUbERQZ1NoQzJ6M1BqVUciLCJpc3MiOiJodHRwczovL2RldmVsb3Blci5hcGkuYXV0b2Rlc2suY29tIiwiYXVkIjoiaHR0cHM6Ly9hdXRvZGVzay5jb20iLCJqdGkiOiJEWlZqVkJCaVp6dzluYk1qM1FaWEJJVm05bUZmWmFES0dSaUc2T2JQcUdNY2VVQjFvOW5nT1dHT29DWkE2Z09JIiwiZXhwIjoxNzg3MDg1MjEyfQ.nJVYAHX3ZfJWUJDSFvkzvDqU8UMsOHzOL-zBoiotAW0CTrk7cdFj4-QVZWMDYXeTdXw3A8hRqeih5bNsfM66Fk6A2K0liQOwVrgbJmsqsoaAT5Zp8tSwekBRRimLKo_jOZXAns5pKPRe5hE_-_xA22Yk_UBAPDW8B6yR5OA--9Vp9el8VsEtEz7O1m8mrarBcws0gKtw5BSSupxnlnauJ4bngymAJLXTlnU0fs8UH7u3tcVm38RmuO_L4qioR42GRpLa4GZG08lJTpJ8q9Wz-hIq13_sGNRrHVOHt9vuu7ujme28YI-yDZF05WJZ0Mg4PbQHyeNRlJstOY6v68nnKw';
         const TOKEN_EXPIRES_IN = 3600;
 
-        // Snowdon Towers Sample Architectural.rvt — one coordinated 3D view per category
-        const MODEL_URN = 'urn:dXJuOmFkc2sub2JqZWN0czpvcy5vYmplY3Q6c2FtcGxlbW9kZWxzL1Nub3dkb24lMjBUb3dlcnMlMjBTYW1wbGUlMjBBcmNoaXRlY3R1cmFsLnJ2dA==';
-        const VIEWABLES = {
-            'Coord - Arch Floors': 'Floors',
-            'Coord - Arch Stairs': 'Stairs',
-            'Coord - Arch Walls': 'Walls',
-            'Coord - Arch Lighting': 'Lighting Fixtures',
-            'Coord - Arch Roofs': 'Roofs'
-        };
+        // Snowdon Tower (Complete).rvt — one combined 3D view with every
+        // category; elements are bucketed by their per-element Revit 'Category'
+        // property inside the engine.
+        const MODEL_URN = 'urn:dXJuOmFkc2sub2JqZWN0czpvcy5vYmplY3Q6c2FtcGxlbW9kZWxzL1Nub3dkb24tVG93ZXItKENvbXBsZXRlKS5ydnQ=';
 
         function loadViewables(viewer, ext) {
             Autodesk.Viewing.Document.load(MODEL_URN, (doc) => {
-                const nameOf = (v) => (typeof v.name === 'function' ? v.name() : v.name);
-                const wanted = doc.getRoot().search({ role: '3d' })
-                    .filter((v) => v.data && v.data.type === 'geometry' && VIEWABLES[nameOf(v)]);
+                const wanted = doc.getRoot().search({ role: '3d' });
                 let pending = wanted.length;
                 for (const viewable of wanted) {
                     viewer.loadDocumentNode(doc, viewable).then((model) => {
-                        ext.addModel(model, VIEWABLES[nameOf(viewable)]);
+                        ext.addModel(model); // category comes from per-element props
                         if (--pending === 0) viewer.fitToView();
                     }).catch((err) => {
                         console.error('[phasing] failed to load', viewable.name, err);
