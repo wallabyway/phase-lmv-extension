@@ -223,7 +223,8 @@ export class PhasingEngine {
             if (s === p._lastStatus) continue;
             p._lastStatus = s;
             for (const [model, dbids] of byModel) {
-                if (model.isLoadDone && !model.isLoadDone()) continue;
+                // NOTE: no isLoadDone() guard here — SVF2 models can report false
+                // even when fully rendered, which would skip every hide/show.
                 try {
                     if (s === 0) {
                         this.viewer.hide(dbids, model);
