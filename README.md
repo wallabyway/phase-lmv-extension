@@ -23,7 +23,7 @@ The bar sits on a single line above the viewer's bottom navigation toolbar.
 
 | File | Purpose |
 |---|---|
-| `index.html` | Viewer container + phasing bar UI + inline LMV bootstrap (access token, model URN, viewer startup) |
+| `index.html` | Viewer container + phasing bar UI + inline LMV bootstrap (model URN, viewer startup) |
 | `ext/ui.mjs` | `PhasingExtension`: toolbar button, slider bar, tooltip chip, embedded phase data (ES module) |
 | `ext/phasing.mjs` | `PhasingEngine`: level detection, phase construction, hide/theming, fall-in animation via `fragList.updateAnimTransform` (ES module) |
 | `tests/smoke-test.js` | Headless (Puppeteer) end-to-end test — load, toggle bar, scrub slider, probe visibility + theming (screenshots land in `tests/`) |
@@ -61,20 +61,6 @@ For a slider position `t`:
 A tooltip chip above the slider thumb follows the dragger and shows the
 newest part to appear on the belt. The schedule (`DEFAULT_PHASES` in
 `ext/ui.mjs`) is embedded in the app, so no external config fetch is needed.
-
-## Access token
-
-The token endpoint (`https://aps-extensions.autodesk.io/api/auth/token`) is
-**DNS-locked for browsers** — it will not respond from the page. The token is
-fetched with curl and hardcoded in `index.html`:
-
-```bash
-curl https://aps-extensions.autodesk.io/api/auth/token
-# paste the new access_token into const ACCESS_TOKEN in index.html
-```
-
-It expires after ~1 hour; re-run the curl and update the constant when the model
-stops loading (401s in the console).
 
 ## Smoke test
 

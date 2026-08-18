@@ -91,17 +91,31 @@
     <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
     <script type="module">
         /* ============================================================================
-         * LMV bootstrap — access token, model URN, and viewer startup.
+         * LMV bootstrap — model URN and viewer startup.
          * UI / extension wiring lives in ext/ui.mjs; phasing logic in ext/phasing.mjs.
          * ========================================================================== */
 
         import { PhasingExtension, DEFAULT_PHASES } from './ext/ui.mjs';
 
-        // The token endpoint (https://aps-extensions.autodesk.io/api/auth/token) is
-        // DNS-locked for browsers — fetch it with curl and paste it here (~1h expiry):
-        //   curl https://aps-extensions.autodesk.io/api/auth/token
-        const ACCESS_TOKEN = 'eyJhbGciOiJSUzI1NiIsImtpZCI6IlZiakZvUzhQU3lYODQyMV95dndvRUdRdFJEa19SUzI1NiIsInBpLmF0bSI6ImFzc2MifQ.eyJzY29wZSI6WyJkYXRhOnJlYWQiXSwiY2xpZW50X2lkIjoiU0diREhFbFg2Nmc5U2MzU2VUbERQZ1NoQzJ6M1BqVUciLCJpc3MiOiJodHRwczovL2RldmVsb3Blci5hcGkuYXV0b2Rlc2suY29tIiwiYXVkIjoiaHR0cHM6Ly9hdXRvZGVzay5jb20iLCJqdGkiOiJEWlZqVkJCaVp6dzluYk1qM1FaWEJJVm05bUZmWmFES0dSaUc2T2JQcUdNY2VVQjFvOW5nT1dHT29DWkE2Z09JIiwiZXhwIjoxNzg3MDg1MjEyfQ.nJVYAHX3ZfJWUJDSFvkzvDqU8UMsOHzOL-zBoiotAW0CTrk7cdFj4-QVZWMDYXeTdXw3A8hRqeih5bNsfM66Fk6A2K0liQOwVrgbJmsqsoaAT5Zp8tSwekBRRimLKo_jOZXAns5pKPRe5hE_-_xA22Yk_UBAPDW8B6yR5OA--9Vp9el8VsEtEz7O1m8mrarBcws0gKtw5BSSupxnlnauJ4bngymAJLXTlnU0fs8UH7u3tcVm38RmuO_L4qioR42GRpLa4GZG08lJTpJ8q9Wz-hIq13_sGNRrHVOHt9vuu7ujme28YI-yDZF05WJZ0Mg4PbQHyeNRlJstOY6v68nnKw';
+        const TOKEN_API = 'https://d1rfabreh9lcnl.cloudfront.net/api/auth/token';
         const TOKEN_EXPIRES_IN = 3600;
+        const FALLBACK_TOKEN = 'eyJhbGciOiJSUzI1NiIsImtpZCI6IlZiakZvUzhQU3lYODQyMV95dndvRUdRdFJEa19SUzI1NiIsInBpLmF0bSI6ImFzc2MifQ.eyJzY29wZSI6WyJkYXRhOnJlYWQiXSwiY2xpZW50X2lkIjoiU0diREhFbFg2Nmc5U2MzU2VUbERQZ1NoQzJ6M1BqVUciLCJpc3MiOiJodHRwczovL2RldmVsb3Blci5hcGkuYXV0b2Rlc2suY29tIiwiYXVkIjoiaHR0cHM6Ly9hdXRvZGVzay5jb20iLCJqdGkiOiJQQXNoZ0J5VmpRRkN6R0lITGFQZ2h4NWlzT2R3TXRCdXVNcWl2ZUl0dFc4ckxQdmhwYm9GekpHQlM5eVhHZlAxIiwiZXhwIjoxNzg3MDg4MjUyfQ.RnEjgfsk_o26WVWCVuosygC2n5Nc391hC1U0z8YYKKk9vezSi6Nudkw6j1KE_Wthm3v3JOI0hcdf7loQ9FcfU3OmYT21nUHfxdFxyzlxjz3lyfr-QaHggJ278LUbLtSevXSDTW2WYdw-HNUA_XvBA1CZLhGD-SdBqayD1sq_vi7he';
+
+        async function fetchAccessToken() {
+            try {
+                const resp = await fetch(TOKEN_API);
+                if (resp.ok) {
+                    const { access_token } = await resp.json();
+                    if (access_token) {
+                        console.log('[phasing] access token fetched from API');
+                        return access_token;
+                    }
+                }
+            } catch (err) {
+                console.warn('[phasing] token fetch failed, using fallback:', err.message);
+            }
+            return FALLBACK_TOKEN;
+        }
 
         // Snowdon Tower (Complete).rvt — one combined 3D view with every
         // category; elements are bucketed by their per-element Revit 'Category'
@@ -110,24 +124,20 @@
 
         function loadViewables(viewer, ext) {
             Autodesk.Viewing.Document.load(MODEL_URN, (doc) => {
-                const wanted = doc.getRoot().search({ role: '3d' });
-                let pending = wanted.length;
-                for (const viewable of wanted) {
-                    viewer.loadDocumentNode(doc, viewable).then((model) => {
-                        ext.addModel(model); // category comes from per-element props
-                        if (--pending === 0) viewer.fitToView();
-                    }).catch((err) => {
-                        console.error('[phasing] failed to load', viewable.name, err);
-                        if (--pending === 0) viewer.fitToView();
-                    });
-                }
+                const viewable = doc.getRoot().getDefaultGeometry();
+                viewer.loadDocumentNode(doc, viewable).then((model) => {
+                    ext.addModel(model); // category comes from per-element props
+                    viewer.fitToView();
+                }).catch((err) => {
+                    console.error('[phasing] failed to load', viewable.name, err);
+                });
             }, (code, message, errors) => console.error('[phasing] document load failed', code, message, errors));
         }
 
         function initViewer(phases) {
             Autodesk.Viewing.Initializer({
                 env: 'AutodeskProduction',
-                getAccessToken: (callback) => callback(ACCESS_TOKEN, TOKEN_EXPIRES_IN)
+                getAccessToken: (callback) => fetchAccessToken().then((token) => callback(token, TOKEN_EXPIRES_IN))
             }, () => {
                 const viewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById('viewer'), {
                     extensions: ['PhasingExtension']
