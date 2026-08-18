@@ -141,6 +141,10 @@
                 });
                 viewer.start();
                 viewer.setTheme('light-theme');
+                // Rendering effects the app doesn't want (all default to ON):
+                viewer.setGroundShadow(false);             // no ground shadow
+                viewer.setGhosting(false);                 // no ghosting on search/isolate
+                viewer.prefs.set('ambientShadows', false); // no ambient occlusion (SAO)
                 window.viewer = viewer;
                 viewer.loadExtension('PhasingExtension').then((ext) => {
                     ext.setPhases(phases);
