@@ -169,8 +169,12 @@ export class PhasingEngine {
 
     statusOf(p, t) { return t < p.start ? 0 : t >= p.end ? 2 : 1; }
     progress(p, t) { return Math.min(1, Math.max(0, (t - p.start) / (p.end - p.start))); }
+    // ease-out (cubic): parts drop quickly at first, then settle gently into place
+    easeOut(u) { return 1 - Math.pow(1 - u, 3); }
     // Target lift (hanging height) of a phase at time t; 0 = settled on the floor.
-    liftTarget(p, t) { return this.statusOf(p, t) === 1 ? (1 - this.progress(p, t)) * this._cfg.dropHeight : 0; }
+    liftTarget(p, t) {
+        return this.statusOf(p, t) === 1 ? (1 - this.easeOut(this.progress(p, t))) * this._cfg.dropHeight : 0;
+    }
 
     // Called on every slider input: re-render when the phase status set changes,
     // then move every in-flight phase's lift exactly where t puts it. The 0..1000
@@ -183,7 +187,10 @@ export class PhasingEngine {
         }
         for (const p of this._phases) {
             const target = this.liftTarget(p, t);
-            if (Math.abs(p._lift - target) < 0.5) continue;
+            if (p._lift === target) continue;
+            // skip sub-step jitter mid-curve, but NEVER when settling: the eased
+            // tail moves < 0.5 units per step, so target 0 must always land exactly
+            if (target !== 0 && Math.abs(p._lift - target) < 0.5) continue;
             p._lift = target;
             this._applyLift(p, target);
         }

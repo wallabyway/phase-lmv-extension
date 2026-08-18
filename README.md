@@ -54,7 +54,7 @@ For a slider position `t`:
 - `phase.start <= t < phase.end` → visible, phase color, **hanging above and
   falling into place** as t grows (fragment transform via
   `fragList.updateAnimTransform`; the 0..1000 slider drives the drop height
-  directly — no tweening)
+  directly along an **ease-out (cubic)** curve — no tweening)
 - `t >= phase.end` → visible, dimmed phase color
 
 A tooltip chip above the slider thumb follows the dragger and shows the
