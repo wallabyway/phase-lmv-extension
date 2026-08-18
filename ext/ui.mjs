@@ -7,31 +7,45 @@
 import { PhasingEngine } from './phasing.mjs';
 
 // Synthetic construction schedule (former phases.json, now embedded).
-// Level phases are generated at runtime as category-major / level-minor:
-// Floors L0..L5, then Walls L0..L5, then Stairs L0..L5, then 'byCategory'.
+// The timeline follows a real build sequence: structure rises floor by floor,
+// then floors, walls, envelope (glazing), stairs, and doors — each level
+// category dropping L0..L5 — followed by whole-building bursts: roof, MEP,
+// finishes & FF&E, site & landscape, and a catch-all 'Other'.
 export const DEFAULT_PHASES = {
     dropHeight: 150, // how far elements hang above their resting place at phase start
     overlap: 2,      // conveyor-belt: parts in flight at once (2 or 3)
-    levelCategories: ['Floors', 'Walls', 'Stairs'], // drop order (category-major)
+    levelCategories: ['Structure', 'Floors', 'Walls', 'Envelope', 'Stairs', 'Doors'],
     levelProps: ['Base Constraint', 'Base Level', 'Level'],
     // Revit exports sub-categories (and LMV prefixes values with 'Revit ') —
-    // normalize components onto their parent category for phasing
+    // normalize components onto their construction parent
     categoryMap: {
+        // structure (rises first; foundations/rebar band to L0)
+        'Structural Framing': 'Structure', 'Structural Columns': 'Structure',
+        'Structural Foundations': 'Structure', 'Structural Rebar': 'Structure',
+        'Structural Connections': 'Structure', 'Columns': 'Structure',
+        // envelope: glazing follows the wall shell
+        'Curtain Panels': 'Envelope', 'Curtain Wall Mullions': 'Envelope', 'Windows': 'Envelope',
+        // walls / floors components
+        'Wall Sweeps': 'Walls', 'Slab Edges': 'Floors',
+        // stairs + vertical circulation
         'Runs': 'Stairs', 'Supports': 'Stairs', 'Landings': 'Stairs',
         'Handrails': 'Stairs', 'Top Rails': 'Stairs', 'Railings': 'Stairs',
-        'Vertical Circulation': 'Stairs',
-        'Wall Sweeps': 'Walls', 'Curtain Panels': 'Walls', 'Curtain Wall Mullions': 'Walls',
-        'Slab Edges': 'Floors'
+        'Vertical Circulation': 'Stairs', 'Ramps': 'Stairs'
     },
     roofLevels: ['R1', 'R2', 'M1', 'Parapet', 'Block', 'Green Roof'],
     colors: [
-        [91, 155, 213], // Floors
-        [198, 90, 17],  // Walls
-        [112, 173, 71]  // Stairs
+        [150, 154, 162], // Structure — steel
+        [91, 155, 213],  // Floors — blue
+        [198, 90, 17],   // Walls — orange
+        [0, 169, 176],   // Envelope — glass teal
+        [112, 173, 71],  // Stairs — green
+        [146, 100, 200]  // Doors — purple
     ],
     byCategory: [
         { id: 'roof', name: 'Roof', short: 'Roof', color: [164, 38, 44], categories: ['Roofs'] },
-        { id: 'finishes', name: 'Finishes & MEP', short: 'MEP', color: [176, 122, 10], categories: ['Lighting Fixtures'] }
+        { id: 'mep', name: 'MEP', short: 'MEP', color: [176, 122, 10], categories: ['Lighting Fixtures', 'Plumbing Fixtures', 'Specialty Equipment', 'Food Service Equipment'] },
+        { id: 'ffe', name: 'Finishes & FF&E', short: 'FF&E', color: [226, 140, 190], categories: ['Ceilings', 'Casework', 'Furniture', 'Generic Models'] },
+        { id: 'site', name: 'Site & Landscape', short: 'Site', color: [133, 138, 60], categories: ['Site', 'Planting', 'Hardscape', 'Parking', 'Entourage'] }
     ]
 };
 

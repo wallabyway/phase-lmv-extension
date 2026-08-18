@@ -37,12 +37,17 @@ containing every Revit category. Each element is bucketed by its per-element
 Lighting Fixtures (doors, furniture, MEP, …) join an **Other** phase at the end
 of the timeline.
 
-Phases are **category-major, level-minor**: Floors drop in level by level
-(L0 → L5), then Walls, then Stairs, then Roof, then MEP, then Other. Each
-element's level comes from its Revit constraints (`Base Constraint` /
+Phases follow a **real build sequence**: Structure rises floor by floor
+(framing, columns, foundations, rebar), then Floors, Walls, Envelope
+(curtain walls, mullions, windows), Stairs, and Doors — each dropping
+L0 → L5 — followed by whole-building bursts: Roof, MEP, Finishes & FF&E,
+Site & Landscape, and an **Other** catch-all (lines, space separation, …).
+Each element's level comes from its Revit constraints (`Base Constraint` /
 `Base Level` / `Level`); elements without level info are placed by height,
 assuming the levels are evenly spaced over the model. Roof-level elements
-(R1/R2/Parapet/…) join the Roof phase.
+(R1/R2/Parapet/…) join the Roof phase. Revit sub-categories (Runs, Supports,
+Curtain Wall Mullions, Slab Edges, …) are mapped onto their construction
+parent, and empty phases are pruned so the belt has no dead slots.
 
 The timeline is a **conveyor belt**: a new part appears every `step` units
 and stays in flight for `overlap` steps (default 2), so two parts hang and

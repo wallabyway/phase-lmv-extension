@@ -124,9 +124,9 @@ export class PhasingEngine {
             return levels[i];
         };
 
-        // phases: category-major (floors, then walls, then stairs), level-minor
+        // phases: category-major (structure, floors, walls, envelope, stairs, doors), level-minor
         const cats = this._cfg.levelCategories;
-        const all = [];
+        let all = [];
         for (let ci = 0; ci < cats.length; ci++) {
             for (const lv of levels) {
                 all.push({
@@ -163,6 +163,8 @@ export class PhasingEngine {
         if (sawOther) {
             all.push({ id: 'other', name: 'Other', short: 'Other', color: [110, 110, 110] });
         }
+        // drop phases that ended up with no elements — no dead slots on the belt
+        all = all.filter((p) => this._buckets.has(p.id));
 
         // Conveyor-belt timeline: a new part appears every `step` units, but each
         // part stays in flight for `overlap` steps, so several parts hang and fall
