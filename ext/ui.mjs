@@ -41,9 +41,6 @@ export class PhasingExtension extends Autodesk.Viewing.Extension {
         this._t = 0;
         this._enabled = false;
         this._active = null;
-        this._ghost = true;          // auto-ghost 1s after the slider stops
-        this._ghostTimer = null;
-        this._ghostingActive = false;
         this.engine = new PhasingEngine(viewer);
         this.engine.onFinalize = () => {
             this.buildTooltip();
@@ -69,7 +66,6 @@ export class PhasingExtension extends Autodesk.Viewing.Extension {
             if (g) g.removeControl(this._button);
         }
         document.getElementById('phasing-bar').classList.add('hidden');
-        this.clearGhost();
         this.engine.clearOverrides();
         return true;
     }
@@ -94,65 +90,14 @@ export class PhasingExtension extends Autodesk.Viewing.Extension {
 
         document.getElementById('phasing-slider').addEventListener('input', (e) => {
             this._t = +e.target.value;
-            this.clearGhost();
-            this.scheduleGhost();
             this.update();
         });
         document.getElementById('phasing-reset').addEventListener('click', () => {
             document.getElementById('phasing-slider').value = 0;
             this._t = 0;
-            this.clearGhost();
-            this.scheduleGhost();
             this.engine.reset();
             this.update();
         });
-        document.getElementById('phasing-ghost').addEventListener('change', (e) => {
-            this._ghost = e.target.checked;
-            if (this._ghost) this.scheduleGhost();
-            else this.clearGhost();
-        });
-    }
-
-    /* ---- idle ghosting ----
-     * While the slider sits still, ghost the model and isolate the in-flight
-     * parts (everything else dims). Any slider movement cancels it immediately. */
-
-    scheduleGhost() {
-        clearTimeout(this._ghostTimer);
-        if (!this._ghost || !this._enabled) return;
-        this._ghostTimer = setTimeout(() => this.applyGhost(), 1000);
-    }
-
-    clearGhost() {
-        clearTimeout(this._ghostTimer);
-        this._ghostTimer = null;
-        if (this._ghostingActive) {
-            this._ghostingActive = false;
-            this.viewer.isolate([]);
-            this.viewer.clearSelection();
-            this.viewer.setGhosting(false);
-            // isolate() rewrote the visibility flags the engine manages —
-            // re-apply the engine's full hide/show/theming truth for every phase.
-            this.engine.reset();
-            this.update();
-        }
-    }
-
-    applyGhost() {
-        if (!this._ghost || !this._enabled || this._ghostingActive) return;
-        const t = this._t / 10;
-        const byModel = new Map(); // model -> [dbids] of the in-flight parts
-        for (const p of this.engine.phases) {
-            if (this.engine.statusOf(p, t) !== 1) continue;
-            for (const [model, dbids] of this.engine.buckets.get(p.id) || new Map()) {
-                if (!byModel.has(model)) byModel.set(model, []);
-                byModel.get(model).push(...dbids);
-            }
-        }
-        if (!byModel.size) return;
-        this._ghostingActive = true;
-        this.viewer.setGhosting(true);
-        for (const [model, dbids] of byModel) this.viewer.isolate(dbids, model);
     }
 
     toggleBar(button) {
@@ -163,10 +108,8 @@ export class PhasingExtension extends Autodesk.Viewing.Extension {
         this._enabled = show;
         if (show) {
             this.engine.reset();
-            this.scheduleGhost();
             this.update();
         } else {
-            this.clearGhost();
             this.engine.clearOverrides(); // restore visibility, colors, and drop transforms
         }
     }
