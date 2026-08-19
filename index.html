@@ -6,12 +6,40 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Snowdon Tower — Construction Phasing</title>
+    <title>Construction Phasing — Snowdon Tower & Office.rvt</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css">
     <style>
         html, body { margin: 0; height: 100%; overflow: hidden; font-family: "Artifakt Element", Helvetica, Arial, sans-serif; }
         #viewer { position: absolute; inset: 0; }
+
+        /* ---- model picker (page-level UI, floating top-left) ---- */
+        #model-picker {
+            position: fixed;
+            top: 12px;
+            left: 12px;
+            z-index: 20;                       /* above LMV's canvas (z-index 1) */
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(24, 30, 40, 0.94);
+            color: #e8edf4;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            padding: 6px 10px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+            font-size: 12px;
+            user-select: none;
+        }
+        .model-picker-label { color: #9fb4cc; white-space: nowrap; }
+        .model-picker-select {
+            background: #232c3a; color: #e8edf4;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 6px;
+            font-size: 12px; font-family: inherit;
+            padding: 3px 6px; max-width: 240px;
+        }
+        .model-picker-select:disabled { opacity: 0.45; cursor: wait; }
 
         /* ---- phasing bar (chips above the slider, above LMV's bottom nav toolbar) ---- */
         #phasing-bar {
@@ -80,6 +108,12 @@
 </head>
 <body>
     <div id="viewer"></div>
+    <!-- Page-level UI (index.html owns this, not the extension): pick a model
+         from the sample-models bucket; the URN is handed to the loader. -->
+    <div id="model-picker">
+        <label class="model-picker-label" for="model-select">Model</label>
+        <select id="model-select" class="model-picker-select" title="Model"></select>
+    </div>
     <div id="phasing-bar" class="hidden">
         <div class="phasing-chips" id="phasing-legend"></div>
         <div class="phasing-row">
@@ -98,7 +132,7 @@
          * UI / extension wiring lives in ext/ui.mjs; phasing logic in ext/phasing.mjs.
          * ========================================================================== */
 
-        import { PhasingExtension, DEFAULT_PHASES } from './ext/ui.mjs?v=5';
+        import { PhasingExtension, DEFAULT_PHASES } from './ext/ui.mjs?v=6';
 
         const TOKEN_API = 'https://d1rfabreh9lcnl.cloudfront.net/api/auth/token';
         const TOKEN_EXPIRES_IN = 3600;
@@ -120,21 +154,71 @@
             return FALLBACK_TOKEN;
         }
 
-        // Snowdon Tower (Complete).rvt — one combined 3D view with every
-        // category; elements are bucketed by their per-element Revit 'Category'
-        // property inside the engine.
-        const MODEL_URN = 'urn:dXJuOmFkc2sub2JqZWN0czpvcy5vYmplY3Q6c2FtcGxlbW9kZWxzL1Nub3dkb24tVG93ZXItKENvbXBsZXRlKS5ydnQ=';
+        // Model picker — page-level UI. The catalog comes from the
+        // sample-models bucket API; MODEL_FALLBACK (Snowdon + Office) covers
+        // the endpoint being down. Selecting a model just passes its URN to
+        // the loader; the extension never touches this combo box.
+        const MODELS_API = 'https://d1rfabreh9lcnl.cloudfront.net/api/models/buckets?id=samplemodels';
+        const MODEL_FALLBACK = [
+            { name: 'Snowdon-Tower-(Complete).rvt', urn: 'urn:dXJuOmFkc2sub2JqZWN0czpvcy5vYmplY3Q6c2FtcGxlbW9kZWxzL1Nub3dkb24tVG93ZXItKENvbXBsZXRlKS5ydnQ=' },
+            { name: 'Office.rvt', urn: 'urn:dXJuOmFkc2sub2JqZWN0czpvcy5vYmplY3Q6c2FtcGxlbW9kZWxzL09mZmljZS5ydnQ=' }
+        ];
+        const SNOWDON_URN = MODEL_FALLBACK[0].urn;
 
-        function loadViewables(viewer, ext) {
-            Autodesk.Viewing.Document.load(MODEL_URN, (doc) => {
+        async function fetchModelCatalog() {
+            try {
+                const resp = await fetch(MODELS_API);
+                if (!resp.ok) throw new Error('HTTP ' + resp.status);
+                const items = await resp.json();
+                const models = items
+                    .filter((m) => /\.rvt$/i.test(m.text))
+                    .map((m) => ({ name: m.text, urn: 'urn:' + m.id }));
+                if (models.length) return models;
+            } catch (err) {
+                console.warn('[phasing] model catalog fetch failed, using fallback:', err.message);
+            }
+            return MODEL_FALLBACK;
+        }
+
+        function fillModelSelect(catalog) {
+            const sel = document.getElementById('model-select');
+            sel.innerHTML = '';
+            for (const m of catalog) {
+                const opt = document.createElement('option');
+                opt.value = m.urn;
+                opt.textContent = m.name;
+                sel.appendChild(opt);
+            }
+            sel.value = SNOWDON_URN;
+        }
+
+        // Load the picked model; on a switch the previous model is unloaded and
+        // the phasing engine is reset so the new model's analysis starts clean.
+        async function loadModel(viewer, urn) {
+            const sel = document.getElementById('model-select');
+            sel.disabled = true;
+            try {
+                // Resolve the CURRENT extension: keepCurrentModels:false tears
+                // down all extensions on switch, so the initial instance dies.
+                const ext = viewer.getExtension('PhasingExtension') || await viewer.loadExtension('PhasingExtension');
+                ext.resetForNewModel();
+                const models = viewer.impl?.modelQueue?.()?.getModels?.() ?? (viewer.model ? [viewer.model] : []);
+                for (const m of models) {
+                    try { viewer.unloadModel(m); } catch (err) { /* model may still be mid-load */ }
+                }
+                const doc = await new Promise((res, rej) =>
+                    Autodesk.Viewing.Document.load(urn, res, (code, message) => rej(new Error(message || code))));
                 const viewable = doc.getRoot().getDefaultGeometry();
-                viewer.loadDocumentNode(doc, viewable).then((model) => {
-                    ext.addModel(model); // category comes from per-element props
-                    viewer.fitToView();
-                }).catch((err) => {
-                    console.error('[phasing] failed to load', viewable.name, err);
-                });
-            }, (code, message, errors) => console.error('[phasing] document load failed', code, message, errors));
+                const model = await viewer.loadDocumentNode(doc, viewable, { keepCurrentModels: false });
+                const fresh = viewer.getExtension('PhasingExtension') || await viewer.loadExtension('PhasingExtension');
+                fresh.setPhases(DEFAULT_PHASES);
+                fresh.addModel(model);
+                viewer.fitToView();
+            } catch (err) {
+                console.error('[phasing] failed to load model', urn, err);
+            } finally {
+                sel.disabled = false;
+            }
         }
 
         function initViewer(phases) {
@@ -165,7 +249,15 @@
                 window.viewer = viewer;
                 viewer.loadExtension('PhasingExtension').then((ext) => {
                     ext.setPhases(phases);
-                    loadViewables(viewer, ext);
+                    // Model picker: populate from the bucket API and load the
+                    // default (Snowdon Complete).
+                    fetchModelCatalog().then((catalog) => {
+                        fillModelSelect(catalog);
+                        document.getElementById('model-select').addEventListener('change', (e) => {
+                            loadModel(viewer, e.target.value);
+                        });
+                        loadModel(viewer, SNOWDON_URN);
+                    });
                 });
             });
         }

@@ -1,8 +1,18 @@
-# Snowdon Tower — LMV Construction Phasing
+# LMV Construction Phasing — Snowdon Tower & Office.rvt
 
-A minimal Autodesk LMV viewer that loads **Snowdon-Tower-(Complete).rvt** and lets
-you scrub a construction timeline: elements are hidden until their phase starts,
+A minimal Autodesk LMV viewer that loads any **Revit sample model** from the
+sample-models bucket (default: **Snowdon-Tower-(Complete).rvt**) and lets you
+scrub a construction timeline: elements are hidden until their phase starts,
 highlighted while in progress, and dimmed once finished.
+
+A floating **Model** combo box at the **top-left of the page** lists every
+`.rvt` model from the `/models/buckets` API (the same catalog the aec-viewer
+combo box uses). It is page-level UI owned by `index.html` — selecting a
+model just passes its URN to the loader, and the phasing extension stays
+fully modular (it never sees the combo box).
+Snowdon and **Office.rvt** both phase floor by floor — Office's
+"Basement / Ground Floor / 1st / 2nd Floor / Top of Roof" level naming is
+resolved by the engine just like Snowdon's "Parking / L1..L5 / R1".
 
 **Live demo:** https://wallabyway.github.io/phase-lmv-extension/
 
@@ -25,19 +35,28 @@ The bar sits on a single line above the viewer's bottom navigation toolbar.
 
 | File | Purpose |
 |---|---|
-| `index.html` | Viewer container + phasing bar UI + inline LMV bootstrap (model URN, viewer startup) |
+| `index.html` | Viewer container + phasing bar UI + inline LMV bootstrap (model picker combo box, URN loader, viewer startup) |
 | `ext/ui.mjs` | `PhasingExtension`: toolbar button, slider bar, tooltip chip, embedded phase data (ES module) |
 | `ext/phasing.mjs` | `PhasingEngine`: level detection, phase construction, hide/theming, fall-in animation via `fragList.updateAnimTransform` (ES module) |
 | `tests/smoke-test.js` | Headless (Puppeteer) end-to-end test — load, toggle bar, scrub slider, probe visibility + theming (screenshots land in `tests/`) |
+| `tests/model-switch-test.js` | Headless test — default Snowdon load, switch to Office.rvt and back via the model picker; asserts level resolution, MEP bucketing, and extension survival |
 | `tests/plan.md` | Build plan / source materials |
 
 ## How it works
 
-The app loads **Snowdon-Tower-(Complete).rvt** — a single combined `{3D}` view
-containing every Revit category. Each element is bucketed by its per-element
-**Category** property; categories that aren't Floors/Walls/Stairs/Roofs/
-Lighting Fixtures (doors, furniture, MEP, …) join an **Other** phase at the end
-of the timeline.
+The model picker is a floating combo box at the top-left of the page
+(`#model-picker` in `index.html`, not in the extension). It is populated
+from `GET /models/buckets?id=samplemodels` (the same endpoint the
+aec-viewer combo box uses); when the endpoint is unreachable the app falls
+back to a two-model array (Snowdon + Office). Selecting a model passes its
+URN to the loader, which unloads the previous model
+(`keepCurrentModels:false`), re-creates the extension LMV tears down, and
+re-runs the phasing analysis from scratch.
+
+The app loads a single combined `{3D}` view containing every Revit category.
+Each element is bucketed by its per-element **Category** property; categories
+that aren't Floors/Walls/Stairs/Roofs/MEP (doors, furniture, lines, …) join
+an **Other** phase at the end of the timeline.
 
 Phases follow a **real build sequence**: Structure rises floor by floor
 (framing, columns, foundations, rebar), then Floors, Walls, Envelope
@@ -45,11 +64,15 @@ Phases follow a **real build sequence**: Structure rises floor by floor
 L0 → L5 — followed by whole-building bursts: Roof, MEP, Finishes & FF&E,
 Site & Landscape, and an **Other** catch-all (lines, space separation, …).
 Each element's level comes from its Revit constraints (`Base Constraint` /
-`Base Level` / `Level`); elements without level info are placed by height,
-assuming the levels are evenly spaced over the model. Roof-level elements
-(R1/R2/Parapet/…) join the Roof phase. Revit sub-categories (Runs, Supports,
-Curtain Wall Mullions, Slab Edges, …) are mapped onto their construction
-parent, and empty phases are pruned so the belt has no dead slots.
+`Base Level` / `Level`). Level names are resolved generically — Snowdon-style
+(`Parking`, `L1`, `R1`/`Parapet`) **and** Office-style (`Basement`/`P1` → 0,
+`Ground Floor` → 1, `1st/2nd Floor`, `Top of Roof`/`Roof Terrace` → Roof);
+when a model has an explicit ground level, ordinal floors shift up by one so
+the timeline stays in physical floor order. Elements without level info are
+placed by height, assuming the levels are evenly spaced over the model.
+Revit sub-categories (Runs, Supports, Curtain Wall Mullions, Slab Edges, …)
+are mapped onto their construction parent, and empty phases are pruned so
+the belt has no dead slots.
 
 The timeline is a **conveyor belt**: a new part appears every `step` units
 and stays in flight for `overlap` steps (default 2), so two parts hang and
@@ -81,6 +104,9 @@ Loads the app headless, waits for phase analysis on the combined model, toggles
 the bar, scrubs the slider through every phase, probes `isNodeVisible` + stored
 theming colors per category, captures a t=0 screenshot, and asserts pixel
 coverage stays low enough that furniture/windows are not drawn.
+
+`tests/model-switch-test.js` runs the same harness against the model picker:
+Snowdon default (L0..L5), switch to Office.rvt (L0..L3 + MEP), and back.
 
 ## Known issue — everything visible at t=0
 

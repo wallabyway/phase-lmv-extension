@@ -4,7 +4,7 @@
  * calculations and fragment manipulation live in phasing.mjs.
  * ========================================================================== */
 
-import { PhasingEngine } from './phasing.mjs?v=5';
+import { PhasingEngine } from './phasing.mjs?v=6';
 
 // Synthetic construction schedule (former phases.json, now embedded).
 // The timeline follows a real build sequence: structure rises floor by floor,
@@ -43,7 +43,15 @@ export const DEFAULT_PHASES = {
     ],
     byCategory: [
         { id: 'roof', name: 'Roof', short: 'Roof', color: [164, 38, 44], categories: ['Roofs'] },
-        { id: 'mep', name: 'MEP', short: 'MEP', color: [176, 122, 10], categories: ['Lighting Fixtures', 'Plumbing Fixtures', 'Specialty Equipment', 'Food Service Equipment'] },
+        { id: 'mep', name: 'MEP', short: 'MEP', color: [176, 122, 10], categories: [
+            'Lighting Fixtures', 'Plumbing Fixtures', 'Specialty Equipment', 'Food Service Equipment',
+            // mechanical / plumbing distribution (Office.rvt and other full-discipline models)
+            'Mechanical Equipment', 'Air Terminals', 'Ducts', 'Duct Fittings', 'Flex Ducts',
+            'Pipes', 'Pipe Fittings', 'Pipe Accessories', 'Sprinklers',
+            // electrical / low-voltage
+            'Electrical Fixtures', 'Electrical Equipment', 'Lighting Devices', 'Telephone Devices',
+            'Data Devices', 'Fire Alarm Devices', 'Security Devices', 'Communication Devices', 'Nurse Call Devices'
+        ] },
         { id: 'ffe', name: 'Finishes & FF&E', short: 'FF&E', color: [226, 140, 190], categories: ['Ceilings', 'Casework', 'Furniture', 'Generic Models'] },
         { id: 'site', name: 'Site & Landscape', short: 'Site', color: [133, 138, 60], categories: ['Site', 'Planting', 'Hardscape', 'Parking', 'Entourage'] }
     ]
@@ -139,6 +147,30 @@ export class PhasingExtension extends Autodesk.Viewing.Extension {
 
     setPhases(cfg) {
         this.engine.setPhases({ ...DEFAULT_PHASES, ...cfg });
+    }
+
+    // Model switch: stop phasing, restore the outgoing model, and drop all
+    // engine state so the incoming model's analysis starts from a clean slate.
+    resetForNewModel() {
+        this._t = 0;
+        this._active = null;
+        const slider = document.getElementById('phasing-slider');
+        if (slider) slider.value = '0';
+        if (this._enabled) {
+            this._enabled = false;
+            if (this._button) this._button.setState(Autodesk.Viewing.UI.Button.State.INACTIVE);
+            document.getElementById('phasing-bar').classList.add('hidden');
+        }
+        try {
+            this.engine.clearOverrides();
+        } catch (err) {
+            console.warn('[phasing] resetForNewModel', err.message);
+        }
+        this.engine.clearModels();
+        const label = document.getElementById('phasing-current');
+        if (label) label.textContent = '—';
+        document.getElementById('phasing-legend').innerHTML = '';
+        this._tooltip = null;
     }
 
     addModel(model, category) {

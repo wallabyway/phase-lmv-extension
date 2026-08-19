@@ -37,6 +37,19 @@ export class PhasingEngine {
         for (const p of this._phases) p._lastStatus = undefined;
     }
 
+    /** Drop all per-model state (a model switch unloaded the previous model).
+     *  Config (_cfg/_catPhase) survives — the schedule is model-independent. */
+    clearModels() {
+        this._phases = [];
+        this._phaseById.clear();
+        this._entries = [];
+        this._buckets.clear();
+        this._modelZ.clear();
+        this._trees.clear();
+        this._pending = 0;
+        this._statusKey = null;
+    }
+
     /* ---- analysis ---- */
 
     addModel(model, category) {
@@ -77,7 +90,21 @@ export class PhasingEngine {
         const box = new Array(6);
         tree.getNodeBox(tree.getRootId(), box);
         this._modelZ.set(model, isFinite(box[0]) ? { min: box[2], max: box[5] } : null);
-        for (const d of dbids) {
+
+        // First pass: classify every element's level name. Models name their
+        // levels differently — Snowdon uses "Parking / L1 / L2 / R1", the
+        // Office sample uses "Basement / Ground Floor / 1st Floor / Top of
+        // Roof". Classification is ordinal; when the model has an explicit
+        // ground level, ordinals shift up by one (ground=1, 1st floor=2, ...)
+        // so the timeline stays in physical floor order.
+        const rawLevels = dbids.map((d) => {
+            const pr = props.get(d);
+            return pr ? this.classifyLevel(pr) : null;
+        });
+        const hasGround = rawLevels.some((l) => l === 'ground');
+
+        for (let i = 0; i < dbids.length; i++) {
+            const d = dbids[i];
             tree.getNodeBox(d, box);
             const pr = props.get(d);
             let cat = pr ? [].concat(pr.get('Category')).find((v) => typeof v === 'string') : null;
@@ -85,25 +112,42 @@ export class PhasingEngine {
                 cat = cat.replace(/^Revit\s+/i, ''); // LMV prefixes category values with 'Revit '
                 cat = (this._cfg.categoryMap && this._cfg.categoryMap[cat]) || cat;
             }
+            const raw = rawLevels[i];
+            let level = null;
+            if (raw === 'roof') level = 'roof';
+            else if (raw === 'ground') level = 1;
+            // below-grade stays 0; ordinals >= 1 shift up past the ground level
+            else if (typeof raw === 'number') level = raw === 0 ? 0 : hasGround ? raw + 1 : raw;
             this._entries.push({
                 model, category: cat || category, dbid: d,
-                level: pr ? this.resolve(pr) : null,
+                level,
                 z: isFinite(box[0]) ? (box[2] + box[5]) / 2 : null
             });
         }
         console.log(`[phasing] ${category || 'model'}: ${dbids.length} elements`);
     }
 
-    // Parking -> 0, "L1 - Block 35" -> 1, roof-level names -> 'roof', else null
-    resolve(props) {
+    // Classify an element's level from its constraint properties. Returns:
+    //   0        below grade (parking / basement / B1 / P1)
+    //   'ground' explicit ground level ("Ground Floor")
+    //   n        ordinal floor ("L1 - Block 35", "Level 1", "1st Floor")
+    //   'roof'   roof-level names (R1 / Parapet / "Top of Roof" / "Roof Terrace")
+    //   null     no recognizable level (height-band guess kicks in)
+    classifyLevel(props) {
         if (!props) return null;
         for (const name of this._cfg.levelProps) {
             for (const v of [].concat(props.get(name))) {
                 if (typeof v !== 'string') continue;
-                if (/^parking/i.test(v)) return 0;
+                if (this._cfg.roofLevels.some((r) => new RegExp('^' + r, 'i').test(v))) return 'roof';
+                if (/^(?:roof|terrace|parapet|penthouse|top of core)/i.test(v)) return 'roof';
+                if (/^(?:parking|basement|lower level|b\d|p\d)/i.test(v)) return 0;
+                if (/^ground/i.test(v)) return 'ground';
                 const m = v.match(/^L(\d+)/i);
                 if (m) return +m[1];
-                if (this._cfg.roofLevels.some((r) => new RegExp('^' + r, 'i').test(v))) return 'roof';
+                const m2 = v.match(/^level\s+(\d+)/i);
+                if (m2) return +m2[1];
+                const m3 = v.match(/^(\d+)(?:st|nd|rd|th)\s*(?:floor|level)?/i);
+                if (m3) return +m3[1];
             }
         }
         return null;
@@ -300,8 +344,12 @@ export class PhasingEngine {
             p._lift = 0;
             this._resetLift(p); // restore fragment transforms
         }
+        // On a model switch the old model may already be unloaded — skip it,
+        // or clearThemingColors/show throw on the dead model object.
+        const live = new Set(this.viewer.impl?.modelQueue?.()?.getModels?.() ?? []);
         for (const byModel of this._buckets.values()) {
             for (const [model, dbids] of byModel) {
+                if (!live.has(model)) continue;
                 try {
                     this.viewer.clearThemingColors(model);
                     this.viewer.show(dbids, model);
@@ -313,7 +361,7 @@ export class PhasingEngine {
         // Fully exit isolation mode so the next bar activation starts from a
         // clean "everything visible" state.
         try {
-            if (this.viewer.showAll) this.viewer.showAll();
+            if (live.size && this.viewer.showAll) this.viewer.showAll();
         } catch (err) {
             console.warn('[phasing] clearOverrides showAll', err.message);
         }
