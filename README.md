@@ -71,12 +71,14 @@ newest part to appear on the belt. The schedule (`DEFAULT_PHASES` in
 
 ```bash
 cd phase-lmv-ext
-NODE_PATH=$(npm root -g) node tests/smoke-test.js   # needs puppeteer + Chromium
+npm install                                          # local puppeteer + pngjs
+node tests/smoke-test.js                             # needs Chromium at /Applications/Chromium-arm64.app
 ```
 
 Loads the app headless, waits for phase analysis on the combined model, toggles
 the bar, scrubs the slider through every phase, probes `isNodeVisible` + stored
-theming colors per category, and screenshots each timeline position.
+theming colors per category, captures a t=0 screenshot, and asserts pixel
+coverage stays low enough that furniture/windows are not drawn.
 
 ## Known issue — everything visible at t=0
 
@@ -96,15 +98,38 @@ Tracked copies (so the issue is visible from the repo):
 ![t=0 furniture bug 1](docs/bug-t0-furniture-1.jpeg)
 ![t=0 furniture bug 2](docs/bug-t0-furniture-2.jpeg)
 
-**Status:**
+**Status:** **Fixed.**
 
-- **Fixed:** `render()` skipped hide/show while `model.isLoadDone()` returned
-  `false` — SVF2 models can report `false` even when fully rendered. The guard
-  was removed; the smoke test now asserts only the first phase is visible
-  immediately after the bar opens.
-- **Still tracking:** headless pixel analysis shows the building at ~67% pixel
-  coverage even at t=0, while fragment-level `isFragVisible` (the renderer's own
-  check) says the same fragments are *not* drawable. Suspicion: browser-side
-  caching of the unversioned `ext/phasing.mjs` (cache-busted via `?v=` imports)
-  and/or a render-path issue that appears only in real browsers. A
-  renderer-truth scan (all fragments × all phases) is the next step.
+The root cause was LMV ≥ 7.119's new "Large Model Experience" (HLOD / out-of-core
+tile manager). With HLOD enabled, geometry streaming stalled when the viewer was
+driven manually, so `GEOMETRY_LOADED_EVENT` never fired and the phasing render
+never got applied — leaving the whole model, including furniture and windows,
+visible at t=0.
+
+Fixes applied:
+
+- Disable `LARGE_MODEL_EXPERIENCE` via `FeatureFlags._setInitializationData`
+  before `Autodesk.Viewing.Initializer` runs (`index.html`).
+- `render()` now uses `viewer.isolate()` per model with the exact set of dbIds
+  that should be visible at the current slider position. This is the renderer's
+  own visibility source-of-truth and avoids the SVF2 visibility-manager race
+  that could leave hidden fragments drawn.
+- `update()` re-applies `viewer.isolate()` on every slider input (not only when
+  the phase status key changes), so scrubbing forward to later phases and then
+  back to t=0 cannot leak hidden geometry.
+- `clearOverrides()` exits isolation mode with `viewer.showAll()` when phasing is
+  deactivated.
+- Hidden phases have their theming color cleared (no stale color overrides on
+  hidden fragments).
+- Module imports are cache-busted (`?v=5`) and `index.html` carries no-cache
+  meta tags so browsers cannot load a pre-fix build.
+
+Verification:
+
+- `tests/smoke-test.js` now asserts pixel coverage at t=0 stays below 25% (with
+  the bug it was ~67%).
+- Fragment-level scan at t=0 shows only the first phase's fragments visible.
+- The smoke test scrubs to t=100, t=300, and back to t=0 and asserts no hidden
+  phases leak after the scrub.
+- Running the smoke test produces `tests/smoke-t0.png` (and optionally
+  `tests/nonheadless-t0.png`) confirming only Structure L0 geometry is drawn.

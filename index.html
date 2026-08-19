@@ -3,6 +3,9 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Snowdon Tower — Construction Phasing</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css">
@@ -95,7 +98,7 @@
          * UI / extension wiring lives in ext/ui.mjs; phasing logic in ext/phasing.mjs.
          * ========================================================================== */
 
-        import { PhasingExtension, DEFAULT_PHASES } from './ext/ui.mjs?v=4';
+        import { PhasingExtension, DEFAULT_PHASES } from './ext/ui.mjs?v=5';
 
         const TOKEN_API = 'https://d1rfabreh9lcnl.cloudfront.net/api/auth/token';
         const TOKEN_EXPIRES_IN = 3600;
@@ -135,6 +138,17 @@
         }
 
         function initViewer(phases) {
+            // LMV >= 7.119 enables "Large Model Experience" (HLOD / out-of-core
+            // tile manager) by default. Its geometry streaming stalls when the
+            // viewer is driven manually like we do here, so GEOMETRY_LOADED_EVENT
+            // never fires and phasing never gets applied — leaving furniture and
+            // windows visible at t=0. Disable it BEFORE Initializer reads the flag.
+            if (Autodesk.Viewing.FeatureFlags?._setInitializationData) {
+                Autodesk.Viewing.FeatureFlags._setInitializationData('LARGE_MODEL_EXPERIENCE', {
+                    overridePreferenceValue: false
+                });
+            }
+
             Autodesk.Viewing.Initializer({
                 env: 'AutodeskProduction',
                 getAccessToken: (callback) => fetchAccessToken().then((token) => callback(token, TOKEN_EXPIRES_IN))

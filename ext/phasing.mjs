@@ -196,15 +196,19 @@ export class PhasingEngine {
         return this.statusOf(p, t) === 1 ? (1 - this.easeOut(this.progress(p, t))) * this._cfg.dropHeight : 0;
     }
 
-    // Called on every slider input: re-render when the phase status set changes,
-    // then move every in-flight phase's lift exactly where t puts it. The 0..1000
-    // slider stepping makes the fall smooth — no tweening.
+    // Called on every slider input: rebuild the isolated visible set and reapply
+    // theming when the phase status set changes, then move every in-flight phase's
+    // lift exactly where t puts it. The 0..1000 slider stepping makes the fall
+    // smooth — no tweening.
     update(t) {
         const key = this._phases.map((p) => this.statusOf(p, t)).join('');
-        if (key !== this._statusKey) {
-            this._statusKey = key;
-            this.render(t);
-        }
+        const keyChanged = key !== this._statusKey;
+        if (keyChanged) this._statusKey = key;
+        // Always re-apply visibility via isolate(); LMV state can drift while
+        // scrubbing (new fragments stream, isolation state is shared, etc.), so
+        // relying only on the status key lets geometry leak when scrubbing back
+        // to an earlier slider position.
+        this.render(t, keyChanged);
         for (const p of this._phases) {
             const target = this.liftTarget(p, t);
             if (p._lift === target) continue;
@@ -216,27 +220,40 @@ export class PhasingEngine {
         }
     }
 
-    render(t) {
+    render(t, applyTheming) {
+        // Build the set of dbIds that should be visible at this t, per model.
+        // viewer.isolate() is the renderer's own "source of truth" visibility call:
+        // it hides every fragment except the isolated set in one shot. This avoids
+        // the SVF2 visibility-manager race that could leave furniture/windows/etc.
+        // drawn at t=0 when viewer.hide() was issued before all fragments streamed.
+        const visibleByModel = new Map();
         for (const [pid, byModel] of this._buckets) {
             const p = this._phaseById.get(pid);
             const s = this.statusOf(p, t);
-            if (s === p._lastStatus) continue;
-            p._lastStatus = s;
+            const statusChanged = s !== p._lastStatus;
+            if (statusChanged) p._lastStatus = s;
+            const [r, g, b] = p.color;
+            const c = s === 0 ? null : new THREE.Vector4(r / 255, g / 255, b / 255, s === 2 ? 0.35 : 1);
             for (const [model, dbids] of byModel) {
-                // NOTE: no isLoadDone() guard here — SVF2 models can report false
-                // even when fully rendered, which would skip every hide/show.
-                try {
-                    if (s === 0) {
-                        this.viewer.hide(dbids, model);
-                    } else {
-                        this.viewer.show(dbids, model);
-                        const [r, g, b] = p.color;
-                        const c = new THREE.Vector4(r / 255, g / 255, b / 255, s === 2 ? 0.35 : 1);
-                        for (const d of dbids) model.setThemingColor(d, c);
-                    }
-                } catch (err) {
-                    console.warn('[phasing]', pid, err.message);
+                if (!visibleByModel.has(model)) visibleByModel.set(model, new Set());
+                if (s !== 0) {
+                    const visible = visibleByModel.get(model);
+                    for (const d of dbids) visible.add(d);
                 }
+                if (applyTheming && statusChanged) {
+                    try {
+                        for (const d of dbids) model.setThemingColor(d, c);
+                    } catch (err) {
+                        console.warn('[phasing] theming', pid, err.message);
+                    }
+                }
+            }
+        }
+        for (const [model, visible] of visibleByModel) {
+            try {
+                this.viewer.isolate([...visible], model);
+            } catch (err) {
+                console.warn('[phasing] isolate', err.message);
             }
         }
         this.viewer.impl.invalidate(true);
@@ -292,6 +309,13 @@ export class PhasingEngine {
                     console.warn('[phasing] clearOverrides', err.message);
                 }
             }
+        }
+        // Fully exit isolation mode so the next bar activation starts from a
+        // clean "everything visible" state.
+        try {
+            if (this.viewer.showAll) this.viewer.showAll();
+        } catch (err) {
+            console.warn('[phasing] clearOverrides showAll', err.message);
         }
         this._statusKey = null;
         this.viewer.impl.invalidate(true);

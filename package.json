@@ -1,0 +1,29 @@
+{
+  "name": "phase-lmv-ext",
+  "version": "1.0.0",
+  "description": "A minimal Autodesk LMV viewer that loads **Snowdon-Tower-(Complete).rvt** and lets you scrub a construction timeline: elements are hidden until their phase starts, highlighted while in progress, and dimmed once finished.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wallabyway/phase-lmv-extension.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/wallabyway/phase-lmv-extension/issues"
+  },
+  "homepage": "https://github.com/wallabyway/phase-lmv-extension#readme",
+  "devDependencies": {
+    "pngjs": "^7.0.0",
+    "puppeteer": "^25.8.0"
+  }
+}

@@ -4,7 +4,7 @@
  * calculations and fragment manipulation live in phasing.mjs.
  * ========================================================================== */
 
-import { PhasingEngine } from './phasing.mjs?v=4';
+import { PhasingEngine } from './phasing.mjs?v=5';
 
 // Synthetic construction schedule (former phases.json, now embedded).
 // The timeline follows a real build sequence: structure rises floor by floor,
