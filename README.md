@@ -18,6 +18,19 @@ resolved by the engine just like Snowdon's "Parking / L1..L5 / R1".
 
 ![phasing](docs/hero.jpg)
 
+## Credits
+
+This extension takes its **ideas** from the
+[autodesk-platform-services/aps-phasing-poc](https://github.com/autodesk-platform-services/aps-phasing-poc)
+proof of concept (phasing a Revit model by construction sequence) and its
+**animation system** from the Autodesk Platform Services blog post
+[View Each Floor Using Vertical Explode](https://aps.autodesk.com/blog/view-each-floor-using-vertical-explode)
+(per-fragment drop animations via `fragList.updateAnimTransform`), and
+combines them into a **single extension for visualizing phasing for Revit
+models, by Revit category and level** — elements are bucketed by their
+per-element `Category` property and their level constraints, then revealed
+on a slider-driven construction timeline.
+
 ## Run
 
 Serve the folder (the viewer SDK needs http):
