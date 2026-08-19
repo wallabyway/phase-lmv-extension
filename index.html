@@ -40,6 +40,14 @@
             padding: 3px 6px; max-width: 240px;
         }
         .model-picker-select:disabled { opacity: 0.45; cursor: wait; }
+        .model-picker-source {
+            color: #7fd1ff;
+            text-decoration: none;
+            font-size: 12px;
+            border-left: 1px solid rgba(255, 255, 255, 0.15);
+            padding-left: 8px;
+        }
+        .model-picker-source:hover { text-decoration: underline; }
 
         /* ---- phasing bar (chips above the slider, above LMV's bottom nav toolbar) ---- */
         #phasing-bar {
@@ -113,6 +121,8 @@
     <div id="model-picker">
         <label class="model-picker-label" for="model-select">Model</label>
         <select id="model-select" class="model-picker-select" title="Model"></select>
+        <a class="model-picker-source" href="https://github.com/wallabyway/phase-lmv-extension"
+           target="_blank" rel="noopener" title="Source code on GitHub">GitHub ↗</a>
     </div>
     <div id="phasing-bar" class="hidden">
         <div class="phasing-chips" id="phasing-legend"></div>
