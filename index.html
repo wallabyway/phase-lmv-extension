@@ -136,22 +136,17 @@
 
         const TOKEN_API = 'https://d1rfabreh9lcnl.cloudfront.net/api/auth/token';
         const TOKEN_EXPIRES_IN = 3600;
-        const FALLBACK_TOKEN = 'eyJhbGciOiJSUzI1NiIsImtpZCI6IlZiakZvUzhQU3lYODQyMV95dndvRUdRdFJEa19SUzI1NiIsInBpLmF0bSI6ImFzc2MifQ.eyJzY29wZSI6WyJkYXRhOnJlYWQiXSwiY2xpZW50X2lkIjoiU0diREhFbFg2Nmc5U2MzU2VUbERQZ1NoQzJ6M1BqVUciLCJpc3MiOiJodHRwczovL2RldmVsb3Blci5hcGkuYXV0b2Rlc2suY29tIiwiYXVkIjoiaHR0cHM6Ly9hdXRvZGVzay5jb20iLCJqdGkiOiJQQXNoZ0J5VmpRRkN6R0lITGFQZ2h4NWlzT2R3TXRCdXVNcWl2ZUl0dFc4ckxQdmhwYm9GekpHQlM5eVhHZlAxIiwiZXhwIjoxNzg3MDg4MjUyfQ.RnEjgfsk_o26WVWCVuosygC2n5Nc391hC1U0z8YYKKk9vezSi6Nudkw6j1KE_Wthm3v3JOI0hcdf7loQ9FcfU3OmYT21nUHfxdFxyzlxjz3lyfr-QaHggJ278LUbLtSevXSDTW2WYdw-HNUA_XvBA1CZLhGD-SdBqayD1sq_vi7he';
 
+        // No embedded fallback token: the viewer cannot authenticate without a
+        // fresh token from the API, so fail loudly instead of silently using a
+        // stale one (which yields confusing 401s on model load).
         async function fetchAccessToken() {
-            try {
-                const resp = await fetch(TOKEN_API);
-                if (resp.ok) {
-                    const { access_token } = await resp.json();
-                    if (access_token) {
-                        console.log('[phasing] access token fetched from API');
-                        return access_token;
-                    }
-                }
-            } catch (err) {
-                console.warn('[phasing] token fetch failed, using fallback:', err.message);
-            }
-            return FALLBACK_TOKEN;
+            const resp = await fetch(TOKEN_API);
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const { access_token } = await resp.json();
+            if (!access_token) throw new Error('token API returned no access_token');
+            console.log('[phasing] access token fetched from API');
+            return access_token;
         }
 
         // Model picker — page-level UI. The catalog comes from the
@@ -235,7 +230,10 @@
 
             Autodesk.Viewing.Initializer({
                 env: 'AutodeskProduction',
-                getAccessToken: (callback) => fetchAccessToken().then((token) => callback(token, TOKEN_EXPIRES_IN))
+                getAccessToken: (callback) => fetchAccessToken().then(
+                    (token) => callback(token, TOKEN_EXPIRES_IN),
+                    (err) => console.error('[phasing] access token fetch failed (no fallback token):', err.message)
+                )
             }, () => {
                 const viewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById('viewer'), {
                     extensions: ['PhasingExtension']
