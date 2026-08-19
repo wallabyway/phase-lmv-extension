@@ -4,7 +4,9 @@ A minimal Autodesk LMV viewer that loads **Snowdon-Tower-(Complete).rvt** and le
 you scrub a construction timeline: elements are hidden until their phase starts,
 highlighted while in progress, and dimmed once finished.
 
-![phasing](tests/smoke-t62.png)
+**Live demo:** https://wallabyway.github.io/phase-lmv-extension/
+
+![phasing](docs/hero.jpg)
 
 ## Run
 
